@@ -1,3 +1,6 @@
+import collections
+
+
 def get_word_frequencies(doc: str) -> dict[str, int]:
     """Extracts word frequencies from a document.
 
@@ -7,8 +10,10 @@ def get_word_frequencies(doc: str) -> dict[str, int]:
     Returns:
         Dictionary with words as keys and their frequencies as values.
     """
-    # TODO
-    ...
+    for i in [',', '.', ':', ';', '?', '!']:
+        doc = doc.replace(i, ' ')
+    tokens = doc.split()
+    return dict(collections.Counter(tokens))
 
 
 def get_word_feature_vector(
@@ -25,5 +30,4 @@ def get_word_feature_vector(
     Returns:
         List of length `len(vocabulary)` with respective frequencies as values.
     """
-    # TODO
-    ...
+    return [word_frequencies.get(word, 0) for word in vocabulary]
