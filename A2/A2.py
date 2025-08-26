@@ -12,8 +12,25 @@ def get_confusion_matrix(
     Returns:
         List of two lists of length 2 each, representing the confusion matrix.
     """
-    # TODO
-    ...
+    n = min(len(actual), len(predicted))
+    actual = actual[:n]
+    predicted = predicted[:n]
+
+    tp = tn = fp = fn = 0
+
+    for a, p in zip(actual, predicted):
+        if a not in (0, 1) or p not in (0, 1):
+            continue
+        if a == 1 and p == 1:
+            tp += 1
+        elif a == 0 and p == 0:
+            tn += 1
+        elif a == 0 and p == 1:
+            fp += 1
+        elif a == 1 and p == 0:
+            fn += 1
+
+    return [[tn, fp], [fn, tp]]
 
 
 def accuracy(actual: list[int], predicted: list[int]) -> float:
@@ -28,8 +45,9 @@ def accuracy(actual: list[int], predicted: list[int]) -> float:
     Returns:
         Accuracy as a float.
     """
-    # TODO
-    ...
+    [[tn, fp], [fn, tp]] = get_confusion_matrix(actual, predicted)
+    acc = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0.0
+    return acc
 
 
 def precision(actual: list[int], predicted: list[int]) -> float:
@@ -44,8 +62,9 @@ def precision(actual: list[int], predicted: list[int]) -> float:
     Returns:
         Precision as a float.
     """
-    # TODO
-    ...
+    [[_, fp], [_, tp]] = get_confusion_matrix(actual, predicted)
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    return precision
 
 
 def recall(actual: list[int], predicted: list[int]) -> float:
@@ -60,8 +79,9 @@ def recall(actual: list[int], predicted: list[int]) -> float:
     Returns:
         Recall as a float.
     """
-    # TODO
-    ...
+    [[_, _], [fn, tp]] = get_confusion_matrix(actual, predicted)
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    return recall
 
 
 def f1(actual: list[int], predicted: list[int]) -> float:
@@ -76,8 +96,10 @@ def f1(actual: list[int], predicted: list[int]) -> float:
     Returns:
         float of harmonic mean of precision and recall.
     """
-    # TODO
-    ...
+    p = precision(actual, predicted)
+    r = recall(actual, predicted)
+    f1 = (2 * p * r) / (p + r) if (p + r) > 0 else 0.0
+    return f1
 
 
 def false_positive_rate(actual: list[int], predicted: list[int]) -> float:
@@ -94,8 +116,9 @@ def false_positive_rate(actual: list[int], predicted: list[int]) -> float:
         float of number of instances incorrectly classified as positive divided
             by number of actually negative instances.
     """
-    # TODO
-    ...
+    [[tn, fp], [_, _]] = get_confusion_matrix(actual, predicted)
+    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+    return fpr
 
 
 def false_negative_rate(actual: list[int], predicted: list[int]) -> float:
@@ -112,5 +135,7 @@ def false_negative_rate(actual: list[int], predicted: list[int]) -> float:
         float of number of instances incorrectly classified as negative divided
             by number of actually positive instances.
     """
-    # TODO
-    ...
+
+    [[_, _], [fn, tp]] = get_confusion_matrix(actual, predicted)
+    fnr = fn / (fn + tp) if (fn + tp) > 0 else 0.0
+    return fnr
