@@ -1,4 +1,8 @@
 from numpy import ndarray
+import re
+import unicodedata
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
 
 
 def load_data(path: str) -> tuple[list[str], list[int]]:
@@ -12,8 +16,29 @@ def load_data(path: str) -> tuple[list[str], list[int]]:
     Returns:
         List of email contents and a list of lobels coresponding to each email.
     """
-    # TODO
-    return [], []
+    emails = []
+    labels = []
+    with open(path, "r", encoding="utf-8") as file:
+        next(file, None)
+
+        for line in file:
+            line = line.rstrip("\n\r")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            _, label, email = parts
+            label = label.strip().lower()
+            if label not in ("spam", "ham"):
+                raise ValueError(f"Unknown label {label}")
+            labels.append(1 if label == "spam" else 0)
+
+            # Remove enclosing quotes if present (this is a fix for something that gave an error in the test)
+            if email.startswith('"') and email.endswith('"'):
+                email = email[1:-1]
+            emails.append(email)
+    return emails, labels
 
 
 def preprocess(doc: str) -> str:
@@ -25,8 +50,16 @@ def preprocess(doc: str) -> str:
     Returns:
         String comprising the corresponding preprocessed text.
     """
-    # TODO
-    ...
+    if not doc:
+        return ""
+
+    doc = unicodedata.normalize("NFKD", doc)
+    doc = doc.lower()
+    doc = re.sub(r"[^a-z0-9\s]", " ", doc)
+    tokens = doc.split()
+    tokens = [t for t in tokens if t not in ENGLISH_STOP_WORDS and len(t) > 2]
+
+    return " ".join(tokens)
 
 
 def preprocess_multiple(docs: list[str]) -> list[str]:
@@ -40,8 +73,7 @@ def preprocess_multiple(docs: list[str]) -> list[str]:
         List of strings, each comprising the corresponding preprocessed
             text.
     """
-    # TODO
-    return []
+    return [preprocess(doc) for doc in docs]
 
 
 def extract_features(
@@ -59,8 +91,13 @@ def extract_features(
         A tuple of of two lists. The lists contain extracted features for
           training and testing dataset respectively.
     """
-    # TODO
-    ...
+    vectorizer = TfidfVectorizer(max_features=10000, ngram_range=(1,2))
+
+    # Fit on training data and transform both train and test datasets
+    X_train = vectorizer.fit_transform(train_dataset).toarray()
+    X_test = vectorizer.transform(test_dataset).toarray()
+
+    return X_train, X_test
 
 
 def train(X: ndarray, y: list[int]) -> object:
@@ -74,8 +111,9 @@ def train(X: ndarray, y: list[int]) -> object:
         A trained model object capable of predicting over unseen sets of
             instances.
     """
-    # TODO
-    return None
+    model = RandomForestClassifier(n_estimators=200, random_state=42)
+    model.fit(X, y)
+    return model
 
 
 def evaluate(y: list[int], y_pred: list[int]) -> tuple[float, float, float, float]:
@@ -90,8 +128,17 @@ def evaluate(y: list[int], y_pred: list[int]) -> tuple[float, float, float, floa
     Returns:
         A tuple of four values: recall, precision, F_1, and accuracy.
     """
-    # TODO
-    return 0, 0, 0, 0
+    tp = sum(1 for true, pred in zip(y, y_pred) if true == pred == 1)
+    tn = sum(1 for true, pred in zip(y, y_pred) if true == pred == 0)
+    fp = sum(1 for true, pred in zip(y, y_pred) if true == 0 and pred == 1)
+    fn = sum(1 for true, pred in zip(y, y_pred) if true == 1 and pred == 0)
+
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+
+    return recall, precision, f1, accuracy
 
 
 if __name__ == "__main__":
