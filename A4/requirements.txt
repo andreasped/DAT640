@@ -1,0 +1,6 @@
+python==3.11
+pytest
+nltk
+requests
+sqlitedict
+ir_datasets
