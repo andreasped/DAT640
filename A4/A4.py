@@ -1,3 +1,4 @@
+from dataclasses import field
 import os
 import re
 import time
@@ -69,9 +70,11 @@ class InvertedIndex(SqliteDict):
             doc_id: Document ID
             freq: Number of times the term appears in the document.
         """
-        # TODO
-        ...
-        
+        if not field or not term or not doc_id or freq <= 0:
+            return
+
+        self.index[field][term].append((doc_id, freq))
+
     def add_doc(self, doc: str) -> None:
         """Preprocesses document and adds postings for fields and terms.
 
@@ -79,10 +82,18 @@ class InvertedIndex(SqliteDict):
             doc: Document to index. Expected to be a NamedTuple with attributes
                 that correspond to the fields in the InvertedIndex.
         """
-        processed_doc = preprocess(getattr(doc, field) or "")
+        if not hasattr(doc, "doc_id"):
+            return
+
         for field in self.index:
-            # TODO
-            ...
+            processed_doc = preprocess(getattr(doc, field) or "")
+            if not processed_doc:
+                continue  # skip empty content
+            term_freq = defaultdict(int)
+            for term in processed_doc:
+                term_freq[term] += 1
+            for term, freq in term_freq.items():
+                self.add_posting(field, term, doc.doc_id, freq)
 
     def get_postings(self, field: str, term: str) -> list[tuple[str, int]]:
         """Fetches the posting list for a given field and term.
@@ -94,8 +105,12 @@ class InvertedIndex(SqliteDict):
         Returns:
             List of postings for the given term in the given field.
         """
-        # TODO
-        ...
+        if not field or not term:
+            return []
+        field_dict = self.index.get(field)
+        if not isinstance(field_dict, dict) and not isinstance(field_dict, defaultdict):
+            return []
+        return list(field_dict.get(term, []))
 
     def get_term_frequency(self, field: str, term: str, doc_id: str) -> int:
         """Return the frequency of a given term in a document.
@@ -108,8 +123,13 @@ class InvertedIndex(SqliteDict):
         Returns:
             Term count in a document.
         """
-        # TODO
-        ...
+        if not field or not term or not doc_id:
+            return 0
+        postings = self.get_postings(field, term)
+        for d, f in postings:
+            if d == doc_id:
+                return f
+        return 0
 
     def get_terms(self, field: str) -> list[str]:
         """Returns all unique terms in the index.
@@ -120,8 +140,12 @@ class InvertedIndex(SqliteDict):
         Returns:
             List of all terms in a given field.
         """
-        # TODO
-        ...
+        if not field:
+            return []
+        field_dict = self.index.get(field)
+        if not isinstance(field_dict, dict) and not isinstance(field_dict, defaultdict):
+            return []
+        return sorted(field_dict.keys())
 
     def __exit__(self, *exc_info) -> None:
         if self.flag == "n":
