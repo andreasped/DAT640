@@ -2,6 +2,7 @@ import abc
 from collections import Counter
 from collections import UserDict as DictClass
 from collections import defaultdict
+import math
 CollectionType = dict[str, dict[str, list[str]]]
 
 
@@ -98,8 +99,22 @@ class ScorerLM(Scorer):
         self.smoothing_param = smoothing_param
 
     def score_term(self, term: str, query_freq: int) -> None:
-        # TODO
-        ...
+        collection_length = self.collection.total_field_length(self.field)
+        if collection_length == 0:
+            return
+
+        collection_freq = sum(self.collection[doc_id].get(self.field, []).count(term)
+                              for doc_id in self.collection)
+        p_coll = collection_freq / collection_length
+
+        for doc_id, doc in self.collection.items():
+            doc_terms = doc.get(self.field, [])
+            dl = len(doc_terms)
+            doc_tf = doc_terms.count(term)
+            p_td = (1 - self.smoothing_param) * (doc_tf / abs(dl)) + self.smoothing_param * p_coll
+
+            if p_td > 0:
+                self.scores[doc_id] += query_freq * math.log(p_td)
 
 
 class ScorerMLM(Scorer):
@@ -116,5 +131,22 @@ class ScorerMLM(Scorer):
         self.smoothing_param = smoothing_param
 
     def score_term(self, term: str, query_freq: float) -> None:
-        # TODO
-        ...
+        p_coll_field = {}
+        for field in self.fields:
+            collection_length = self.collection.total_field_length(field)
+            collection_freq = sum(self.collection[doc_id].get(field, []).count(term)
+                                  for doc_id in self.collection)
+            p_coll_field[field] = collection_freq / max(collection_length, 1)
+
+        for doc_id, doc in self.collection.items():
+            p_td = 0.0
+            for field, weight in zip(self.fields, self.field_weights):
+                doc_terms = doc.get(field, [])
+                dl = len(doc_terms)
+                doc_tf = doc_terms.count(term)
+                p_field = (1 - self.smoothing_param) * (doc_tf / abs(dl)) + \
+                          self.smoothing_param * p_coll_field[field]
+                p_td += weight * p_field
+
+            if p_td > 0:
+                self.scores[doc_id] += query_freq * math.log(p_td)
