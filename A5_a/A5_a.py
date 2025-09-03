@@ -2,6 +2,7 @@ import abc
 from collections import Counter
 from collections import UserDict as DictClass
 from collections import defaultdict
+import math
 CollectionType = dict[str, dict[str, list[str]]]
 
 
@@ -88,8 +89,13 @@ class Scorer(abc.ABC):
 
 class SimpleScorer(Scorer):
     def score_term(self, term: str, query_freq: int) -> None:
-        # TODO
-        ...
+        postings = self.index.get(self.field, {}).get(term, [])
+        if not postings:
+            return
+
+        for doc_id, freq in postings:
+            if freq > 0 and query_freq > 0:
+                self.scores[doc_id] += freq * query_freq
 
 
 class ScorerBM25(Scorer):
@@ -106,8 +112,27 @@ class ScorerBM25(Scorer):
         self.k1 = k1
 
     def score_term(self, term: str, query_freq: int) -> None:
-        # TODO
-        ...
+        postings = self.index.get(self.field, {}).get(term, [])
+        if not postings:
+            return
+        nt = len(postings)
+        if nt == 0:
+            return
+
+        N = len(self.collection)
+        if N == 0:
+            return
+        idf = math.log(N/nt)
+        avg_dl = self.collection.avg_field_length(self.field)
+
+        for doc_id, freq in postings:
+            dl = len(self.collection[doc_id][self.field])
+            denom = freq + self.k1 * (1 - self.b + self.b * abs(dl) / avg_dl)
+            if denom <= 0:
+                continue
+
+            score = (freq * (1 + self.k1)) / denom
+            self.scores[doc_id] += score * idf * query_freq
 
 
 class ScorerBM25F(Scorer):
@@ -126,5 +151,38 @@ class ScorerBM25F(Scorer):
         self.k1 = k1
 
     def score_term(self, term: str, query_freq: int) -> None:
-        # TODO
-        ...
+        postings_body = self.index.get("body", {}).get(term, [])
+        if not postings_body:
+            return
+        nt = len(postings_body)
+        if nt == 0:
+            return
+        N = len(self.collection)
+        if N == 0:
+            return
+        idf = math.log(N / nt)
+
+        # all docs containing term in any field
+        docs_with_term = set()
+        for f in self.fields:
+            docs_with_term = docs_with_term.union({doc_id for doc_id, _ in self.index.get(f, {}).get(term, [])})
+
+        for doc_id in docs_with_term:
+            ctd_tilde = 0.0
+            for i, field in enumerate(self.fields):
+                postings = dict(self.index.get(field, {}).get(term, []))
+                term_freq = postings.get(doc_id, 0)
+                if term_freq <= 0:
+                    continue
+
+                dl = len(self.collection.get(doc_id, {}).get(field, []))
+                avg_field_len = self.collection.avg_field_length(field)
+                norm_factor = (1 - self.bi[i]) + self.bi[i] * dl / avg_field_len
+
+                ctd_tilde += self.field_weights[i] * (term_freq / norm_factor)
+
+            if ctd_tilde <= 0:
+                continue
+
+            score = (ctd_tilde / (self.k1 + ctd_tilde)) * idf
+            self.scores[doc_id] += score * query_freq
