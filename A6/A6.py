@@ -28,8 +28,15 @@ def load_rankings(
     Returns:
         Dictionary with query IDs as keys and list of documents as values.
     """
-    # TODO
-    return {}
+    rankings = {}
+
+    with open(filename, encoding="utf-8") as f:
+        next(f)
+        for line in f:
+            query_id, doc_id = line.strip().split("\t")
+            rankings.setdefault(query_id, []).append(doc_id)
+
+    return rankings
 
 
 def load_ground_truth(
@@ -67,10 +74,11 @@ def load_ground_truth(
         Dictionary with query IDs as keys and sets of documents as values.
     """
     dataset = ir_datasets.load(collection)
+    ground_truth = {}
     for qrel in dataset.qrels_iter():
-        # TODO
-        ...
-    return {}
+        if qrel.relevance > 0:  # only relevant (1) and highly relevant (2)
+            ground_truth.setdefault(qrel.query_id, set()).add(qrel.doc_id)
+    return ground_truth
 
 
 def get_precision(
@@ -86,8 +94,13 @@ def get_precision(
     Returns:
         P@K (float).
     """
-    # TODO
-    return 0
+    if k <= 0:
+        return 0.0
+
+    top_k = system_ranking[:k]
+    relevant_retrieved = sum(1 for doc_id in top_k if doc_id in ground_truth)
+
+    return relevant_retrieved / k
 
 
 def get_average_precision(
@@ -102,8 +115,18 @@ def get_average_precision(
     Returns:
         AP (float).
     """
-    # TODO
-    return 0
+    if not ground_truth:
+        return 0.0
+
+    relevant_count = 0
+    precision_sum = 0.0
+
+    for i, doc_id in enumerate(system_ranking, start=1):
+        if doc_id in ground_truth:
+            relevant_count += 1
+            precision_sum += relevant_count / i
+
+    return precision_sum / len(ground_truth)
 
 
 def get_reciprocal_rank(
@@ -118,8 +141,10 @@ def get_reciprocal_rank(
     Returns:
         RR (float).
     """
-    # TODO
-    return 0
+    for i, doc_id in enumerate(system_ranking, start=1):
+        if doc_id in ground_truth:
+            return 1.0 / i
+    return 0.0
 
 
 def get_mean_eval_measure(
@@ -140,8 +165,17 @@ def get_mean_eval_measure(
     Returns:
         Mean evaluation measure (float).
     """
-    # TODO
-    return 0
+    if not system_rankings:
+        return 0.0
+
+    scores = []
+    for qid, ranking in system_rankings.items():
+        if qid not in ground_truths:
+            continue
+        score = eval_function(ranking, ground_truths[qid])
+        scores.append(score)
+
+    return sum(scores) / len(scores) if scores else 0.0
 
 
 if __name__ == "__main__":
