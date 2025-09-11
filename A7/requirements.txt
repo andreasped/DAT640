@@ -1,0 +1,4 @@
+python==3.11
+elasticsearch==7.17
+numpy
+pytest
