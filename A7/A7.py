@@ -3,7 +3,7 @@ from collections import defaultdict
 from typing import Callable
 
 import numpy as np
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError, TransportError
 
 FIELDS = ["title", "body"]
 
@@ -121,8 +121,39 @@ def extract_query_features(
         Dictionary with keys 'query_length', 'query_sum_idf',
             'query_max_idf', and 'query_avg_idf'.
     """
-    # TODO
-    return {}
+    features = {
+        "query_length": len(query_terms),
+        "query_sum_idf": 0.0,
+        "query_max_idf": 0.0,
+        "query_avg_idf": 0.0,
+    }
+
+    if not query_terms:
+        return features
+
+    try:
+        N = max(1, es.count(index=index).get("count", 0))
+    except (NotFoundError, TransportError, KeyError):
+        return features  # index missing or request failed
+    
+    idfs = []
+    for term in query_terms:
+        try:
+            df = es.count(
+                index=index,
+                body={"query": {"term": {"body": term}}}
+            ).get("count", 0)
+        except (TransportError, KeyError):
+            df = 0
+        if df > 0:
+            idfs.append(np.log(N / df))
+
+    if idfs:
+        features["query_sum_idf"] = float(sum(idfs))
+        features["query_max_idf"] = float(max(idfs))
+        features["query_avg_idf"] = float(np.mean(idfs))
+
+    return features
 
 
 def extract_doc_features(
@@ -138,8 +169,30 @@ def extract_doc_features(
     Returns:
         Dictionary with keys 'doc_length_title', 'doc_length_body'.
     """
-    # TODO
-    return {}
+    features = {}
+    for field in ["title", "body"]:
+        try:
+            tv = es.termvectors(index=index, id=doc_id, fields=[field])
+        except (NotFoundError, TransportError):
+            features[f"doc_length_{field}"] = 0
+            continue
+
+        term_vectors = tv.get("term_vectors", {})
+        if field not in term_vectors:
+            features[f"doc_length_{field}"] = 0
+            continue
+
+        try:
+            length = sum(
+                stat.get("term_freq", 0)
+                for stat in term_vectors[field].get("terms", {}).values()
+            )
+        except Exception:
+            length = 0
+
+        features[f"doc_length_{field}"] = int(length)
+
+    return features
 
 
 def extract_query_doc_features(
@@ -161,8 +214,30 @@ def extract_query_doc_features(
             'unique_query_terms_in_body', 'sum_TF_title', 'sum_TF_body',
             'max_TF_title', 'max_TF_body', 'avg_TF_title', 'avg_TF_body'.
     """
-    # TODO
-    return {}
+    features = {}
+    for field in ["title", "body"]:
+        try:
+            tv = get_doc_term_freqs(es, doc_id, field, index=index) or {}
+        except Exception:
+            tv = {}
+
+        if not query_terms:
+            features[f"unique_query_terms_in_{field}"] = 0
+            features[f"sum_TF_{field}"] = 0.0
+            features[f"max_TF_{field}"] = 0.0
+            features[f"avg_TF_{field}"] = 0.0
+            continue
+
+        tf_values = [tv.get(t, 0) for t in query_terms]
+
+        features[f"unique_query_terms_in_{field}"] = sum(1 for v in tf_values if v > 0)
+        features[f"sum_TF_{field}"] = float(np.sum(tf_values)) if tf_values else 0.0
+        features[f"max_TF_{field}"] = float(np.max(tf_values)) if tf_values else 0.0
+        features[f"avg_TF_{field}"] = (
+            float(np.sum(tf_values)) / len(query_terms) if query_terms else 0.0
+        )
+
+    return features
 
 
 def extract_features(
