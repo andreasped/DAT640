@@ -142,8 +142,19 @@ class PRF:
             lam: Weight ratio between old and new terms. If <0.5, new terms will
               be rated higher than old ones.
         """
-        # TODO
-        return []
+        # Combine terms from both dictionaries
+        terms = set(weighted_terms.keys()) | set(weighted_terms_to_add.keys())
+        interpolated = {}
+
+        for term in terms:
+            p_q = weighted_terms.get(term, 0.0)
+            p_t = weighted_terms_to_add.get(term, 0.0)
+            interpolated[term] = lam * p_q + (1 - lam) * p_t
+
+        if not interpolated:
+            return []
+
+        return sorted(interpolated.items(), key=lambda x: (-x[1], x[0]))
 
     def get_query_weighted_terms(self, query: str) -> dict[str, float]:
         """Returns weighted terms for a given query.
@@ -154,8 +165,23 @@ class PRF:
         Returns:
             A dictionary with weighted terms.
         """
-        # TODO
-        return {}
+        tokens = preprocess(query)
+        if not tokens:
+            return {}
+
+        counter = Counter(tokens)
+        total_terms = sum(counter.values())
+        if total_terms == 0:
+            return {}
+        
+        weighted_terms = {}
+        for term, freq in counter.items():
+            try:
+                weighted_terms[term] = freq / total_terms
+            except ZeroDivisionError:
+                weighted_terms[term] = 0.0
+
+        return weighted_terms
 
     def get_top_collection_terms(
         self, top_ranked_documents: list[list[str]]
@@ -171,8 +197,24 @@ class PRF:
         Returns:
             A dictionary with weighted terms according to the RM3 algorithm.
         """
-        # TODO
-        return {}
+        counter = Counter()
+        for doc in top_ranked_documents[: self.prf_num_documents]:
+            if not isinstance(doc, list):
+                continue  # Skip wrong document formats
+            counter.update(doc)
+
+        most_common = counter.most_common(self.prf_num_terms)
+        total = sum(freq for _, freq in most_common)
+
+        if total == 0:
+            return {}
+
+        try:
+            normalized_terms = {term: freq / total for term, freq in most_common}
+        except ZeroDivisionError:
+            normalized_terms = {}
+
+        return normalized_terms
 
 
 if __name__ == "__main__":
