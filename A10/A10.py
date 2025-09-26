@@ -1,3 +1,6 @@
+from collections import Counter
+
+
 PREFIX = "##"
 UNKNOWN = "<unk>"
 
@@ -11,8 +14,21 @@ def initialize_vocabulary(word_corpus: list[str]) -> set[str]:
     Returns:
         Initial vocabulary.
     """
-    # TODO
-    ...
+    vocab = set()
+    for word in word_corpus:
+        if not isinstance(word, str):
+            raise ValueError("All elements in word_corpus must be string")
+        word = word.lower().strip()
+        if not word:
+            continue
+        vocab.add(word[0])  # Add first word without prefix
+        for ch in word[1:]:
+            if not ch.isalnum():  # Only alphanumeric characters
+                continue
+            vocab.add(PREFIX + ch)  # Subsequent characters with ##
+    if not vocab:
+        raise ValueError("Vocabulary cannot be initialized from an empty or invalid corpus")
+    return vocab
 
 
 def tokenize(word: str, vocabulary: set[str]) -> list[str]:
@@ -75,8 +91,38 @@ def get_new_subword_token(
     Returns:
         New subword token and its score.
     """
-    # TODO
-    ...
+    token_freq = Counter()
+    pair_freq = Counter()
+
+    for tokens, freq in data:
+        if not tokens or freq <= 0:
+            continue
+        for t in tokens:
+            token_freq[t] += freq
+        for i in range(len(tokens) - 1):
+            pair = (tokens[i], tokens[i + 1])
+            pair_freq[pair] += freq
+
+    best_pair = None
+    best_score = float("-inf")
+
+    for (a, b), pfreq in pair_freq.items():
+        if pfreq <= 0 or token_freq[a] <= 0 or token_freq[b] <= 0:
+            continue
+        try:
+            s = score(pfreq, token_freq[a], token_freq[b])
+        except ZeroDivisionError:
+            continue
+        if s > best_score:
+            best_score = s
+            best_pair = (a, b)
+
+    if not best_pair:
+        return ("", 0.0)
+
+    # Merge into new subword token
+    new_token = best_pair[0] + best_pair[1].lstrip(PREFIX)
+    return new_token, best_score
 
 
 def train(
@@ -101,8 +147,29 @@ def train(
     Returns:
         Vocabulary.
     """
-    # TODO
-    ...
+    for _ in range(num_iterations):
+        if max_vocab_size and len(vocabulary) >= max_vocab_size:
+            break
+
+        try:
+            data = tokenize_corpus(word_corpus, vocabulary)
+        except Exception as e:
+            raise ValueError(f"Error during tokenization: {e}")
+
+        # Find best new token
+        new_token, _ = get_new_subword_token(data, vocabulary)
+        if not new_token:
+            break
+
+        if max_vocab_size and len(vocabulary) + 1 > max_vocab_size:
+            break
+
+        vocabulary.add(new_token)
+
+    if not vocabulary:
+        raise ValueError("Vocabulary is empty after training")
+
+    return vocabulary
 
 
 def tokenize_corpus(
@@ -117,5 +184,17 @@ def tokenize_corpus(
     Returns:
         List of tokenized words and their frequencies.
     """
-    # TODO
-    ...
+    tokenized = []
+    for word, freq in corpus:
+        if not isinstance(word, str) or not isinstance(freq, int) or freq <= 0:
+            continue
+        try:
+            tokens = tokenize(word, vocabulary)
+            tokenized.append((tokens, freq))
+        except Exception as e:
+            print(f"Error tokenizing word '{word}': {e}")
+            continue
+
+    if not tokenized:
+        raise ValueError("Tokenized corpus is empty")
+    return tokenized
