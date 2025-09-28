@@ -5,6 +5,7 @@ from typing import Callable
 
 import numpy as np
 from elasticsearch import Elasticsearch
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 
 FIELDS = ["title", "body"]
 
@@ -97,8 +98,24 @@ def load_training_data(filepath: str) -> tuple[list[list[float]], list[int]]:
     """
     features = []
     labels = []
-
-    # TODO 
+    with open(filepath, "r") as f:
+        for line_number, line in enumerate(f, start=1):
+            try:
+                line = line.strip()
+                if not line:
+                    continue
+                if ";" not in line:
+                    raise ValueError(f"Missing delimiter ';' in line {line_number}")
+                fv_str, label_str = line.split(";", 1)
+                feature_vector = ast.literal_eval(fv_str)
+                if not isinstance(feature_vector, list):
+                    raise ValueError(f"Feature vector is not a list in line {line_number}")
+                label = int(label_str)
+                features.append(feature_vector)
+                labels.append(label)
+            except (ValueError, SyntaxError) as e:
+                print(f"Error processing line {line_number}: {e}")
+                continue
     return features, labels
 
 
@@ -195,8 +212,7 @@ def load_qrels(filepath: str) -> dict[str, list[str]]:
 class PointWiseLTRModel:
     def __init__(self) -> None:
         """Instantiates LTR model with an instance of scikit-learn regressor."""
-        # TODO
-        self.regressor = ...
+        self.regressor = RandomForestRegressor(n_estimators=200, random_state=42)
 
     def _train(self, X: list[list[float]], y: list[float]) -> None:
         """Trains an LTR model.
@@ -256,7 +272,13 @@ def get_rankings(
     """
 
     # Load pre-computed test feature vectors
-    # TODO
+    try:
+        test_features = load_test_features(feature_vectors_filepath)
+        if not test_features:
+            raise ValueError("No test features were loaded. Check file.")
+    except (FileNotFoundError, ValueError) as e:
+        raise RuntimeError(f"Failed to load test features from {feature_vectors_filepath}: {e}")
+
     test_rankings = {}
     for i, query_id in enumerate(query_ids):
         print("Processing query {}/{} ID {}".format(i + 1, len(query_ids), query_id))
@@ -274,8 +296,24 @@ def get_rankings(
 
         # Rerank the first-pass result set using the LTR model.
         if rerank:
-            # TODO
-            ...
+            if query_id not in test_features:
+                print(f"WARNING: No test features found for query ID {query_id}; skipping reranking.")
+                continue
+
+            doc_ids = test_rankings.get(query_id, [])
+            ft = test_features.get(query_id, [])
+
+            if len(ft) != len(doc_ids):
+                print(f"WARNING: Mismatch between feature vectors and document IDs for query ID {query_id}; skipping reranking.")
+                continue
+
+            try:
+                ranked_docs = ltr.rank(ft, doc_ids)
+                test_rankings[query_id] = [doc_id for doc_id, _ in ranked_docs]
+            except Exception as e:
+                print(f"ERROR: Failed to rerank documents for query ID {query_id}: {e}")
+                continue
+
     return test_rankings
 
 
